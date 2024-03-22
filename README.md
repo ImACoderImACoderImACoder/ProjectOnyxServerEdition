@@ -16,7 +16,9 @@ go to the directory where you cloned this and run the script
 py getMacAddress.py
 this will give you your device mac address
 
-# Add you mac address in the two places XX:XX:XX:XX:XX:XX appears. Notice its the same format as your device address. This allows the server to connect to your volcano.
+# Add your mac address in volcanoBleServer.py
+
+There are two places XX:XX:XX:XX:XX:XX appears. Replace that with your device address. Notice its the same format as your device address. This allows the server to connect to your volcano.
 
 The server is now ready to run
 
