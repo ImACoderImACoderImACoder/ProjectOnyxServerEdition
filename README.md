@@ -35,3 +35,7 @@ get nssm and install open ssh in windows features
 nssm allows you to easily install this code as a service. If you choose to use nssm the bat files can be simplified since they don't ever need to start the server
 
 Using ssh will allow you to control with many devices such as shortcuts in ios and siri!
+
+# Video Demo
+
+https://www.tiktok.com/t/ZTL24gwcK/
