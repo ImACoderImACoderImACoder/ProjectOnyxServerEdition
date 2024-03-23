@@ -19,9 +19,17 @@ class AsyncServer:
         self.fanOnTime = fanOnTime
 
     async def connect_bluetooth_device(self):
+        def notification_handler(sender, data):
+            """Callback for when a notification is received from the BLE device."""
+            print(f"Notification from {sender}: {data}")
+            decodedValue = data[0] + (data[1] * 256)
+            unmaskedValue = decodedValue & 0x2000
+            self.fanOn = unmaskedValue == 0
+
         self.bt_client = BleakClient(self.bt_device_address)
         try:
             await self.bt_client.connect()
+            await self.bt_client.start_notify("1010000c-5354-4f52-5a26-4249434b454c", notification_handler)
             if self.turnFanOnWhenConnected == True:
                 if self.fanOnTime > 0:
                     await self.onFanOffTimer(self.fanOnTime)
@@ -41,6 +49,7 @@ class AsyncServer:
     async def shutdown(self, delay):
         await asyncio.sleep(delay)  # Wait for specified delay (in seconds)
         if self.server_task is not None:
+            await self.bt_client.stop_notify("1010000c-5354-4f52-5a26-4249434b454c")
             self.server_task.cancel()
             print("Server has been shut down after the delay.")
 
@@ -136,6 +145,7 @@ if __name__ == "__main__":
     parser.add_argument('--initTemp', type=int, help='Message to send', default=None)
     parser.add_argument('--FanOn', type=bool, help='Turn fan on', default=False)
     parser.add_argument('--FanOnTime', type=float, help='Optional time to keep fan on', default=0)
+    parser.add_argument('--BleMacAddress', type=str, help='Mac address of your Volcano', default="XX:XX:XX:XX:XX:XX")
     args = parser.parse_args()
-    server = AsyncServer(args.FanOn, args.FanOnTime, bt_device_address="XX:XX:XX:XX:XX:XX", initialTemp=args.initTemp)  # Replace with your device's address
+    server = AsyncServer(args.FanOn, args.FanOnTime, bt_device_address=args.BleMacAddress, initialTemp=args.initTemp)  # Replace with your device's address
     asyncio.run(server.run())
