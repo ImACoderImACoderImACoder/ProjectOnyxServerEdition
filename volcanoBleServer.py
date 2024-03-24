@@ -186,7 +186,7 @@ class AsyncServer:
             if 71 <= x <=100:
                 time.sleep(0.05) """
 
-        await self.shutdown(18000) #5 hours
+        #await self.shutdown(18000) #5 hours
 
 # To run the server and connect to the Bluetooth device
 if __name__ == "__main__":
