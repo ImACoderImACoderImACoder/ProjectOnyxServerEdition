@@ -162,6 +162,7 @@ class AsyncServer:
     async def run(self):
         await self.connect_bluetooth_device()
         self.server_task = asyncio.create_task(self.run_server())
+        await self.server_task
         
         """ x = 1
         increment = True
