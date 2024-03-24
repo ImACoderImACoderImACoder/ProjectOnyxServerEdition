@@ -2,6 +2,7 @@ import socket
 import asyncio
 import argparse
 import struct
+import time
 import sys
 from bleak import BleakClient
 
@@ -50,13 +51,15 @@ class AsyncServer:
             self.server_task.cancel()
             print("Server has been shut down after the delay.")
 
-    async def write_gatt_char_with_delay(self, delay, char_uuid, data, turnHeatOff):
+    async def write_gatt_char_with_delay(self, delay, char_uuid, data, turnHeatOff, turnOffScreen):
         await asyncio.sleep(delay)
         await self.bt_client.write_gatt_char(char_uuid, data)
         if turnHeatOff:
              await self.bt_client.write_gatt_char("10110010-5354-4f52-5a26-4249434b454c", bytes([0]))
+        if turnOffScreen:
+             await self.bt_client.write_gatt_char("10110005-5354-4f52-5a26-4249434b454c",  struct.pack('<H', 0))
 
-    async def onFanOffTimer(self, timeOn, turnOffHeat):
+    async def onFanOffTimer(self, timeOn, turnOffHeat, turnOffScreen):
         await self.bt_client.write_gatt_char("10110013-5354-4f52-5a26-4249434b454c", bytes([0]))
         # Cancel the existing task if it's still running
         if self.fan_off_timer_task and not self.fan_off_timer_task.done():
@@ -65,7 +68,7 @@ class AsyncServer:
         
         # Schedule the new task
         self.fan_off_timer_task = asyncio.create_task(
-            self.write_gatt_char_with_delay(timeOn, "10110014-5354-4f52-5a26-4249434b454c", bytes([0]), turnOffHeat)
+            self.write_gatt_char_with_delay(timeOn, "10110014-5354-4f52-5a26-4249434b454c", bytes([0]), turnOffHeat, turnOffScreen)
         )
     async def handle_client(self, reader, writer):
         address = writer.get_extra_info('peername')
@@ -82,6 +85,10 @@ class AsyncServer:
                 await self.bt_client.write_gatt_char("10110010-5354-4f52-5a26-4249434b454c", bytes([0]))
             elif message == "FanOn":
                 await self.bt_client.write_gatt_char("10110013-5354-4f52-5a26-4249434b454c", bytes([0]))
+            elif message.startswith("SetBrightness"):
+                parts = message.split("=")
+                brightness = int(parts[1])  # Convert the right part to integer
+                await self.bt_client.write_gatt_char("10110005-5354-4f52-5a26-4249434b454c",  struct.pack('<H', brightness))
             elif message == "NextSesh":
                 value = await self.bt_client.read_gatt_char("10110003-5354-4f52-5a26-4249434b454c")
                 decodedValue = value[0] + (value[1] * 256)
@@ -105,7 +112,8 @@ class AsyncServer:
                 parts = message.split("=")
                 timeOn = float(parts[1])  # Convert the right part to integer
                 turnOffHeat = "HeatOff" in parts[0]
-                await self.onFanOffTimer(timeOn, turnOffHeat)
+                turnOffScreen = "ScreenOff" in parts[0]
+                await self.onFanOffTimer(timeOn, turnOffHeat, turnOffScreen)
 
             elif message == "FanToggle":
                 fanChar = "10110013-5354-4f52-5a26-4249434b454c"
@@ -154,6 +162,30 @@ class AsyncServer:
     async def run(self):
         await self.connect_bluetooth_device()
         self.server_task = asyncio.create_task(self.run_server())
+        
+        """ x = 1
+        increment = True
+        while True:
+            if increment:
+                x += 1
+            else:
+                x -= 1
+
+            if x == 15:
+                increment = False
+            elif x == 0:
+                increment = True
+
+            brightness = x
+            print(brightness)
+            await self.bt_client.write_gatt_char("10110005-5354-4f52-5a26-4249434b454c",  struct.pack('<H', brightness))
+            if 0 <= x <=15:
+                time.sleep(0.3)
+            if 16 <=x <= 70 :
+                time.sleep(0.05)
+            if 71 <= x <=100:
+                time.sleep(0.05) """
+
         await self.shutdown(18000) #5 hours
 
 # To run the server and connect to the Bluetooth device
