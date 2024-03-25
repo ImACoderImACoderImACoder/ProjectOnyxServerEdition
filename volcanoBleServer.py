@@ -49,18 +49,40 @@ class AsyncServer:
             
             await self.bt_client.start_notify(self.registerOneUuid, notification_handler)
             if self.turnFanOnWhenConnected == True:
-                await self.bt_client.write_gatt_char(self.fanOnUuid, bytes([0]))
+                await self.turnFanOn()
 
             if self.initialTemp:
-                print("Writing initial temp")
-                buffer = struct.pack('<I', self.initialTemp * 10)
-                await self.bt_client.write_gatt_char(self.targetTempUuid, buffer)
+                await self.writeTargetTemperature(self.initialTemp)
 
             print(f"Connected to Bluetooth device at {self.bt_device_address}")
         except Exception as e:
             print(f"Failed to connect to the Bluetooth device: {e}")
             sys.exit("Failed to connect to the Bluetooth device")
 
+    async def turnHeatOn(self):
+        await self.bt_client.write_gatt_char(self.heatOnUuid, bytes([0]))
+
+    async def turnHeatOff(self):
+        await self.bt_client.write_gatt_char(self.heatOffUuid, bytes([0]))
+
+    async def turnFanOn(self):
+        await self.bt_client.write_gatt_char(self.fanOnUuid, bytes([0]))
+
+    async def turnFanOff(self):
+        await self.bt_client.write_gatt_char(self.fanOffUuid, bytes([0]))
+
+    async def setBrightness(self, brightness):
+        await self.bt_client.write_gatt_char(self.screenBrightnessUuid,  struct.pack('<H', brightness))
+
+    async def writeTargetTemperature(self, targetTemperatureInC):
+        await self.bt_client.write_gatt_char(self.targetTempUuid, struct.pack('<I', targetTemperatureInC * 10))
+
+    async def readTargetTemperature(self):
+        value = await self.bt_client.read_gatt_char(self.targetTempUuid)
+        decodedValue = value[0] + (value[1] * 256)
+        normalizedValue = round(decodedValue / 10)
+        return normalizedValue
+    
     async def shutdown(self, delay):
         await asyncio.sleep(delay)  # Wait for specified delay (in seconds)
         if self.server_task is not None:
@@ -68,16 +90,16 @@ class AsyncServer:
             self.server_task.cancel()
             print("Server has been shut down after the delay.")
 
-    async def write_gatt_char_with_delay(self, delay, char_uuid, data, turnHeatOff, turnOffScreen):
+    async def write_gatt_char_with_delay(self, delay, turnHeatOff, turnOffScreen):
         await asyncio.sleep(delay)
-        await self.bt_client.write_gatt_char(char_uuid, data)
+        await self.turnFanOff()
         if turnHeatOff:
-             await self.bt_client.write_gatt_char(self.heatOffUuid, bytes([0]))
+             await self.turnHeatOff()
         if turnOffScreen:
-             await self.bt_client.write_gatt_char(self.screenBrightnessUuid,  struct.pack('<H', 0))
+             await self.setBrightness(0)
 
     async def onFanOffTimer(self, timeOn, turnOffHeat, turnOffScreen):
-        await self.bt_client.write_gatt_char(self.fanOnUuid, bytes([0]))
+        await self.turnFanOn()
         # Cancel the existing task if it's still running
         if self.fan_off_timer_task and not self.fan_off_timer_task.done():
             self.fan_off_timer_task.cancel()
@@ -85,7 +107,7 @@ class AsyncServer:
         
         # Schedule the new task
         self.fan_off_timer_task = asyncio.create_task(
-            self.write_gatt_char_with_delay(timeOn, self.fanOffUuid, bytes([0]), turnOffHeat, turnOffScreen)
+            self.write_gatt_char_with_delay(timeOn, turnOffHeat, turnOffScreen)
         )
     async def handle_client(self, reader, writer):
         address = writer.get_extra_info('peername')
@@ -97,68 +119,52 @@ class AsyncServer:
             message = data.decode()
             print(f"Received {message} from {address}")
             if message == "HeatOn":
-                await self.bt_client.write_gatt_char(self.heatOnUuid, bytes([0]))
+                await self.turnHeatOn()
             elif message == "HeatOff":
-                await self.bt_client.write_gatt_char(self.heatOffUuid, bytes([0]))
+                await self.turnHeatOff()
             elif message == "FanOn":
-                await self.bt_client.write_gatt_char(self.fanOnUuid, bytes([0]))
+                await self.turnFanOn()
             elif message.startswith("SetBrightness"):
                 parts = message.split("=")
-                brightness = int(parts[1])  # Convert the right part to integer
-                await self.bt_client.write_gatt_char(self.screenBrightnessUuid,  struct.pack('<H', brightness))
+                brightness = int(parts[1])
+                await self.setBrightness(brightness)
             elif message == "NextSesh":
-                value = await self.bt_client.read_gatt_char(self.targetTempUuid)
-                decodedValue = value[0] + (value[1] * 256)
-                normalizedValue = round(decodedValue / 10)
-                print(normalizedValue)
-                if normalizedValue == 185:
-                    await self.bt_client.write_gatt_char(self.targetTempUuid, struct.pack('<I', 1900))
-                elif normalizedValue == 190:
-                    await self.bt_client.write_gatt_char(self.targetTempUuid, struct.pack('<I', 1950))
-                elif normalizedValue == 195:
-                    await self.bt_client.write_gatt_char(self.targetTempUuid, struct.pack('<I', 2000))
-                elif normalizedValue == 200:
-                    await self.bt_client.write_gatt_char(self.targetTempUuid, struct.pack('<I', 1850))
-                else:
-                    await self.bt_client.write_gatt_char(self.targetTempUuid, struct.pack('<I', 1850))
+                nextTemp = await self.readTargetTemperature() + 5
+                if nextTemp not in (185,190,195,200):
+                    nextTemp = 185
 
-                await self.bt_client.write_gatt_char(self.heatOnUuid, bytes([0]))
+                await self.writeTargetTemperature(nextTemp)
+                await self.turnHeatOn()
             elif message == "FanOff":
-                await self.bt_client.write_gatt_char(self.fanOffUuid, bytes([0]))
+                await self.turnFanOff()
             elif message.startswith("FanOffTimer"):
                 parts = message.split("=")
-                timeOn = float(parts[1])  # Convert the right part to integer
+                timeOn = float(parts[1])
                 turnOffHeat = "HeatOff" in parts[0]
                 turnOffScreen = "ScreenOff" in parts[0]
                 await self.onFanOffTimer(timeOn, turnOffHeat, turnOffScreen)
-
             elif message == "HeatToggle": 
-                print(self.heatOn)
-                heatChar = self.heatOnUuid
-                print(f"self heat on: {self.heatOn}")
                 if self.heatOn:
-                    heatChar = self.heatOffUuid
-                
-                await self.bt_client.write_gatt_char(heatChar, bytes([0]))
+                    await self.turnHeatOff()
+                else:
+                    await self.turnHeatOn()
                 self.heatOn = not self.heatOn
                 data = f"Heat on: {self.heatOn}".encode('utf-8')
             elif message == "FanToggle":
-                fanChar = self.fanOnUuid
-                print(f"self fan on: {self.fanOn}")
                 if self.fanOn:
-                    fanChar = self.fanOffUuid
-
-                await self.bt_client.write_gatt_char(fanChar, bytes([0]))
+                    await self.turnFanOff()
+                else:
+                    await self.turnFanOn()
                 self.fanOn = not self.fanOn
+                data = f"Fan on: {self.fanOn}".encode('utf-8')
             elif message.startswith("Temp="):
                 parts = message.split("=")
-                temp_value = int(parts[1])  # Convert the right part to integer
-                buffer = struct.pack('<I', temp_value * 10)
-                await self.bt_client.write_gatt_char(self.targetTempUuid, buffer)
-                await self.bt_client.write_gatt_char(self.heatOnUuid, bytes([0]))
+                nextTemp = int(parts[1])
+                await self.writeTargetTemperature(nextTemp)
+                await self.turnHeatOn()
             elif message.startswith("Disconnect"):
-                await self.bt_client.write_gatt_char(self.heatOffUuid, bytes([0]))
-                await self.bt_client.write_gatt_char(self.fanOffUuid, bytes([0]))
+                await self.turnHeatOff()
+                await self.turnFanOff()
                 if self.server_task is not None:
                     self.server_task.cancel()
                 sys.exit("Disconnect command recieved, closing server")
@@ -196,7 +202,7 @@ class AsyncServer:
 
             brightness = x
             print(brightness)
-            await self.bt_client.write_gatt_char(self.screenBrightnessUuid,  struct.pack('<H', brightness))
+            await self.setBrightness(brightness)
             if 0 <= x <=15:
                 time.sleep(0.3)
             if 16 <=x <= 70 :
@@ -213,5 +219,5 @@ if __name__ == "__main__":
     parser.add_argument('--FanOn', type=bool, help='Turn fan on', default=False)
     parser.add_argument('--BleMacAddress', type=str, help='Mac address of your Volcano', default="XX:XX:XX:XX:XX:XX")
     args = parser.parse_args()
-    server = AsyncServer(args.FanOn, bt_device_address=args.BleMacAddress, initialTemp=args.initTemp)  # Replace with your device's address
+    server = AsyncServer(args.FanOn, bt_device_address=args.BleMacAddress, initialTemp=args.initTemp)
     asyncio.run(server.run())
