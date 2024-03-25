@@ -5,7 +5,7 @@ async def run():
     devices = await BleakScanner.discover()
     for device in devices:
         # Check if device.name is not None before looking for "VOLCANO" in it
-        if device.name and "VOLCANO" in device.name:
+        if device.name and "VOLCANO" in device.name.upper():
             print(f"Found VOLCANO device: {device.name}, MAC Address: {device.address}")
             # If you wish to connect, additional code using BleakClient would go here.
             break
