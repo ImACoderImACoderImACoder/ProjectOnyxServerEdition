@@ -2,7 +2,6 @@ import socket
 import asyncio
 import argparse
 import struct
-import time
 import sys
 from bleak import BleakClient
 
@@ -239,7 +238,6 @@ class AsyncServer:
         await self.server_task
         #await self.shutdown(18000) #5 hours
 
-# To run the server and connect to the Bluetooth device
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Send a message to a TCP server.')
     parser.add_argument('--initTemp', type=int, help='Message to send', default=None)
