@@ -17,6 +17,7 @@ class AsyncServer:
         self.bt_client = None
         self.server_task = None
         self.fan_off_timer_task = None
+        self.screenAnimationTask = None
         self.heatOnUuid = "1011000f-5354-4f52-5a26-4249434b454c"
         self.heatOffUuid = "10110010-5354-4f52-5a26-4249434b454c"
         self.fanOnUuid = "10110013-5354-4f52-5a26-4249434b454c"
@@ -87,6 +88,11 @@ class AsyncServer:
         await asyncio.sleep(delay)  # Wait for specified delay (in seconds)
         if self.server_task is not None:
             await self.bt_client.stop_notify(self.registerOneUuid)
+            if self.fan_off_timer_task is not None and not self.fan_off_timer_task.done():
+                self.fan_off_timer_task.cancel()
+            if self.screenAnimationTask is not None and not self.screenAnimationTask.done():
+                self.screenAnimationTask.cancel()
+
             self.server_task.cancel()
             print("Server has been shut down after the delay.")
 
@@ -109,6 +115,49 @@ class AsyncServer:
         self.fan_off_timer_task = asyncio.create_task(
             self.write_gatt_char_with_delay(timeOn, turnOffHeat, turnOffScreen)
         )
+    async def AnimateVolcano(self, animationMessage):
+
+        if "Blinking" in animationMessage:
+             isOn = False
+             while True:
+                 if isOn:
+                     await self.setBrightness(0)
+                 else:
+                     await self.setBrightness(70)
+                 isOn = not isOn
+                 time.sleep(0.5)
+                 
+        elif "Breathing" in animationMessage:
+            x = 1
+            increment = True
+            min, max, interval = 0, 100, 7
+            while True: 
+                if increment:
+                    x += interval
+                else:
+                    x -= interval
+
+                if x >= max:
+                    x = max
+                    increment = False
+                elif x <= min:
+                    x = min
+                    increment = True
+                await self.setBrightness(x)
+                time.sleep(0.25)    
+
+    async def screenAnimationTaskScheduler(self, animationMessage):
+        if self.screenAnimationTask and not self.screenAnimationTask.done():
+            self.screenAnimationTask.cancel()
+            self.screenAnimationTask = None
+            print("Cancelled the existing timer task.")
+
+        # Schedule the new task
+        if "True" in animationMessage:    
+            self.screenAnimationTask = asyncio.create_task(
+                self.AnimateVolcano(animationMessage)
+            )
+        
     async def handle_client(self, reader, writer):
         address = writer.get_extra_info('peername')
         print(f"Connected by {address}")
@@ -137,6 +186,8 @@ class AsyncServer:
                 await self.turnHeatOn()
             elif message == "FanOff":
                 await self.turnFanOff()
+            elif message.startswith("Animate"):
+                await self.screenAnimationTaskScheduler(message)
             elif message.startswith("FanOffTimer"):
                 parts = message.split("=")
                 timeOn = float(parts[1])
@@ -186,30 +237,6 @@ class AsyncServer:
         await self.connect_bluetooth_device()
         self.server_task = asyncio.create_task(self.run_server())
         await self.server_task
-        
-        """ x = 1
-        increment = True
-        while True:
-            if increment:
-                x += 1
-            else:
-                x -= 1
-
-            if x == 15:
-                increment = False
-            elif x == 0:
-                increment = True
-
-            brightness = x
-            print(brightness)
-            await self.setBrightness(brightness)
-            if 0 <= x <=15:
-                time.sleep(0.3)
-            if 16 <=x <= 70 :
-                time.sleep(0.05)
-            if 71 <= x <=100:
-                time.sleep(0.05) """
-
         #await self.shutdown(18000) #5 hours
 
 # To run the server and connect to the Bluetooth device
