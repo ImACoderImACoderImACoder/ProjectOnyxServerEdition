@@ -2,6 +2,7 @@ import socket
 import asyncio
 import argparse
 import struct
+import time
 import sys
 from bleak import BleakClient
 
@@ -103,6 +104,46 @@ class AsyncServer:
         if turnOffScreen:
              await self.setBrightness(0)
 
+    async def AnimateVolcano(self, animationMessage):
+        if "Blinking" in animationMessage:
+            isOn = False
+            while not self.screenAnimationTask.cancelling() > 0 and not self.screenAnimationTask.cancelled():
+                if isOn:
+                    await self.setBrightness(0)
+                else:
+                    await self.setBrightness(70)
+                isOn = not isOn
+                await asyncio.sleep(0.5)
+                
+        elif "Breathing" in animationMessage:
+            x = 1
+            increment = True
+            min, max, interval = 0, 100, 8
+            while not self.screenAnimationTask.cancelling and not self.screenAnimationTask.cancelled:  
+                if increment:
+                    x += interval
+                else:
+                    x -= interval
+                if x >= max:
+                    x = max
+                    increment = False
+                elif x <= min:
+                    x = min
+                    increment = True
+                await self.setBrightness(x)
+                await asyncio.sleep(0.1)    
+            
+    async def screenAnimationTaskScheduler(self, animationMessage):
+        if self.screenAnimationTask and not self.screenAnimationTask.done():
+            self.screenAnimationTask.cancel()
+            print("Cancelled the existing animation task.")
+
+        # Schedule the new task
+        if "True" in animationMessage:    
+            self.screenAnimationTask = asyncio.create_task(
+                self.AnimateVolcano(animationMessage)
+            )
+        
     async def onFanOffTimer(self, timeOn, turnOffHeat, turnOffScreen):
         await self.turnFanOn()
         # Cancel the existing task if it's still running
@@ -114,49 +155,7 @@ class AsyncServer:
         self.fan_off_timer_task = asyncio.create_task(
             self.write_gatt_char_with_delay(timeOn, turnOffHeat, turnOffScreen)
         )
-    async def AnimateVolcano(self, animationMessage):
 
-        if "Blinking" in animationMessage:
-             isOn = False
-             while True:
-                 if isOn:
-                     await self.setBrightness(0)
-                 else:
-                     await self.setBrightness(70)
-                 isOn = not isOn
-                 time.sleep(0.5)
-                 
-        elif "Breathing" in animationMessage:
-            x = 1
-            increment = True
-            min, max, interval = 0, 100, 7
-            while True: 
-                if increment:
-                    x += interval
-                else:
-                    x -= interval
-
-                if x >= max:
-                    x = max
-                    increment = False
-                elif x <= min:
-                    x = min
-                    increment = True
-                await self.setBrightness(x)
-                time.sleep(0.25)    
-
-    async def screenAnimationTaskScheduler(self, animationMessage):
-        if self.screenAnimationTask and not self.screenAnimationTask.done():
-            self.screenAnimationTask.cancel()
-            self.screenAnimationTask = None
-            print("Cancelled the existing timer task.")
-
-        # Schedule the new task
-        if "True" in animationMessage:    
-            self.screenAnimationTask = asyncio.create_task(
-                self.AnimateVolcano(animationMessage)
-            )
-        
     async def handle_client(self, reader, writer):
         address = writer.get_extra_info('peername')
         print(f"Connected by {address}")
