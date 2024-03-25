@@ -14,13 +14,11 @@ pip install bleak
 
 go to the directory where you cloned this and run the script
 py getMacAddress.py
-this will give you your device mac address
+this will give you your device mac address. use this in place of the XX:XX:XX:XX:XX:XX in the command below
 
-# Add your mac address in volcanoBleServer.py
+# Run the server
 
-There are two places XX:XX:XX:XX:XX:XX appears. Replace that with your device address. Notice its the same format as your device address. This allows the server to connect to your volcano.
-
-The server is now ready to run
+py .\volcanoBleServer.py --BleMacAddress=XX:XX:XX:XX:XX:XX
 
 # How to interact with the server
 
