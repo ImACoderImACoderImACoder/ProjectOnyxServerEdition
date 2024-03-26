@@ -119,7 +119,7 @@ class AsyncServer:
             x = 1
             increment = True
             min, max, interval = 0, 100, 8
-            while not self.screenAnimationTask.cancelling and not self.screenAnimationTask.cancelled:  
+            while not self.screenAnimationTask.cancelling() > 0 and not self.screenAnimationTask.cancelled():  
                 if increment:
                     x += interval
                 else:
