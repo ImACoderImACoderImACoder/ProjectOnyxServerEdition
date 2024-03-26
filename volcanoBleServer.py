@@ -27,6 +27,7 @@ class AsyncServer:
         self.registerOneUuid = "1010000c-5354-4f52-5a26-4249434b454c"
         self.turnFanOnWhenConnected = turnFanOnWhenConnected
         self.fanOnTime = None
+        self.isAnimating = False
 
     async def connect_bluetooth_device(self):
         def notification_handler(sender, data):
@@ -68,9 +69,11 @@ class AsyncServer:
 
     async def turnFanOn(self):
         await self.bt_client.write_gatt_char(self.fanOnUuid, bytes([0]))
+        self.fanOn = True
 
     async def turnFanOff(self):
         await self.bt_client.write_gatt_char(self.fanOffUuid, bytes([0]))
+        self.fanOn = False
 
     async def setBrightness(self, brightness):
         await self.bt_client.write_gatt_char(self.screenBrightnessUuid,  struct.pack('<H', brightness))
@@ -96,30 +99,37 @@ class AsyncServer:
             self.server_task.cancel()
             print("Server has been shut down after the delay.")
 
-    async def write_gatt_char_with_delay(self, delay, turnHeatOff, turnOffScreen):
-        await asyncio.sleep(delay)
+    async def write_gatt_char_with_delay(self, message):
+        parts = message.split("=")
+        timeOn = float(parts[1])
+        turnOffHeat = "HeatOff" in parts[0]
+        turnOffScreen = "ScreenOff" in parts[0]
+        await asyncio.sleep(timeOn)
         await self.turnFanOff()
-        if turnHeatOff:
+        if turnOffHeat:
              await self.turnHeatOff()
         if turnOffScreen:
              await self.setBrightness(0)
+        if "Animate" in message:
+            await self.AnimateVolcano(message)
 
     async def AnimateVolcano(self, animationMessage):
+        self.isAnimating = True    
         if "Blinking" in animationMessage:
             isOn = False
-            while not self.screenAnimationTask.cancelling() > 0 and not self.screenAnimationTask.cancelled():
+            while self.isAnimating:
                 if isOn:
                     await self.setBrightness(0)
                 else:
-                    await self.setBrightness(70)
+                    await self.setBrightness(100)
                 isOn = not isOn
                 await asyncio.sleep(0.5)
-                
+            await self.setBrightness(70)
         elif "Breathing" in animationMessage:
             x = 1
             increment = True
             min, max, interval = 0, 100, 8
-            while not self.screenAnimationTask.cancelling() > 0 and not self.screenAnimationTask.cancelled():  
+            while self.isAnimating:  
                 if increment:
                     x += interval
                 else:
@@ -131,20 +141,49 @@ class AsyncServer:
                     x = min
                     increment = True
                 await self.setBrightness(x)
-                await asyncio.sleep(0.1)    
-            
+                await asyncio.sleep(0.1)
+        elif "Ascending" in animationMessage:
+            increment = True
+            min, max, interval = 0, 100, 8
+            x = -interval
+            while self.isAnimating:  
+                x += interval
+                if x >= max:
+                    x = max
+                await self.setBrightness(x)
+                if x == max:
+                    x = -interval
+                await asyncio.sleep(0.1)
+        elif "Descending" in animationMessage:
+            increment = True
+            min, max, interval = 0, 100, 8
+            x = max
+            while self.isAnimating:
+                if x < min:
+                    x = min  
+                await self.setBrightness(x)
+                if x == min:
+                    x = max
+                else:
+                    x -= interval
+                await asyncio.sleep(0.1)
+
     async def screenAnimationTaskScheduler(self, animationMessage):
         if self.screenAnimationTask and not self.screenAnimationTask.done():
-            self.screenAnimationTask.cancel()
+            self.isAnimating = False
+            #waiting to let the ble commands finish.
+            #This effectively cancels the task since I know the implementation and that it can exit very quickly.  
+            #This is a friendly way to 'cancel' the task and prevents us from experiencing errors from the windows ble api
+            while not self.screenAnimationTask.done():
+                await asyncio.sleep(0.01)
             print("Cancelled the existing animation task.")
 
         # Schedule the new task
-        if "True" in animationMessage:    
+        if "True" in animationMessage:
             self.screenAnimationTask = asyncio.create_task(
                 self.AnimateVolcano(animationMessage)
             )
-        
-    async def onFanOffTimer(self, timeOn, turnOffHeat, turnOffScreen):
+    async def onFanOffTimer(self, message):
         await self.turnFanOn()
         # Cancel the existing task if it's still running
         if self.fan_off_timer_task and not self.fan_off_timer_task.done():
@@ -153,7 +192,7 @@ class AsyncServer:
         
         # Schedule the new task
         self.fan_off_timer_task = asyncio.create_task(
-            self.write_gatt_char_with_delay(timeOn, turnOffHeat, turnOffScreen)
+            self.write_gatt_char_with_delay(message)
         )
 
     async def handle_client(self, reader, writer):
@@ -187,11 +226,7 @@ class AsyncServer:
             elif message.startswith("Animate"):
                 await self.screenAnimationTaskScheduler(message)
             elif message.startswith("FanOffTimer"):
-                parts = message.split("=")
-                timeOn = float(parts[1])
-                turnOffHeat = "HeatOff" in parts[0]
-                turnOffScreen = "ScreenOff" in parts[0]
-                await self.onFanOffTimer(timeOn, turnOffHeat, turnOffScreen)
+                await self.onFanOffTimer(message)
             elif message == "HeatToggle": 
                 if self.heatOn:
                     await self.turnHeatOff()
@@ -204,7 +239,6 @@ class AsyncServer:
                     await self.turnFanOff()
                 else:
                     await self.turnFanOn()
-                self.fanOn = not self.fanOn
                 data = f"Fan on: {self.fanOn}".encode('utf-8')
             elif message.startswith("Temp="):
                 parts = message.split("=")
