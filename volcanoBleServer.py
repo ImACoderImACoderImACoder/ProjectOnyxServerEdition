@@ -128,9 +128,9 @@ class AsyncServer:
                 await asyncio.sleep(0.5)
             await self.setBrightness(70)
         elif "Breathing" in animationMessage:
-            x = 1
             increment = True
             min, max, interval = 0, 100, 8
+            x = -interval
             while self.isAnimating:  
                 if increment:
                     x += interval
