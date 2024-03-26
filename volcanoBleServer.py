@@ -126,7 +126,6 @@ class AsyncServer:
                     await self.setBrightness(100)
                 isOn = not isOn
                 await asyncio.sleep(0.5)
-            await self.setBrightness(70)
         elif "Breathing" in animationMessage:
             increment = True
             min, max, interval = 0, 100, 8
@@ -169,6 +168,8 @@ class AsyncServer:
                 else:
                     x -= interval
                 await asyncio.sleep(0.1)
+        
+        await self.setBrightness(70)
 
     async def screenAnimationTaskScheduler(self, animationMessage):
         if self.screenAnimationTask and not self.screenAnimationTask.done():
