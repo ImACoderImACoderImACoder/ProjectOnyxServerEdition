@@ -113,7 +113,7 @@ class AsyncServer:
         if turnOffScreen:
              await self.setBrightness(0)
         if "Animate" in message:
-            await self.AnimateVolcano(message)
+            await self.screenAnimationTaskScheduler(message)
 
     async def AnimateVolcano(self, animationMessage):
         self.isAnimating = True    
