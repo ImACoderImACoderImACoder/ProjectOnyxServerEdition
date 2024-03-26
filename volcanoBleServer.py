@@ -94,7 +94,9 @@ class AsyncServer:
             if self.fan_off_timer_task is not None and not self.fan_off_timer_task.done():
                 self.fan_off_timer_task.cancel()
             if self.screenAnimationTask is not None and not self.screenAnimationTask.done():
-                self.screenAnimationTask.cancel()
+                self.isAnimating = False
+                while not self.screenAnimationTask.done():
+                    await asyncio.sleep(0.1)
 
             self.server_task.cancel()
             print("Server has been shut down after the delay.")
