@@ -43,11 +43,7 @@ class AsyncServer:
         try:
             await self.bt_client.connect()
             value = await self.bt_client.read_gatt_char(self.registerOneUuid)
-            decodedValue = value[0] + (value[1] * 256)
-            unmaskedFanOnValue = decodedValue & 0x2000
-            unmaskedHeatOnValue = decodedValue & 0x0020
-            self.heatOn = unmaskedHeatOnValue != 0
-            self.fanOn = unmaskedFanOnValue != 0
+            notification_handler("connect_bluetooth_device", value)
             
             await self.bt_client.start_notify(self.registerOneUuid, notification_handler)
             if self.turnFanOnWhenConnected == True:
@@ -63,9 +59,11 @@ class AsyncServer:
 
     async def turnHeatOn(self):
         await self.bt_client.write_gatt_char(self.heatOnUuid, bytes([0]))
+        self.heatOn = True
 
     async def turnHeatOff(self):
         await self.bt_client.write_gatt_char(self.heatOffUuid, bytes([0]))
+        self.heatOn = False
 
     async def turnFanOn(self):
         await self.bt_client.write_gatt_char(self.fanOnUuid, bytes([0]))
@@ -84,8 +82,7 @@ class AsyncServer:
     async def readTargetTemperature(self):
         value = await self.bt_client.read_gatt_char(self.targetTempUuid)
         decodedValue = value[0] + (value[1] * 256)
-        normalizedValue = round(decodedValue / 10)
-        return normalizedValue
+        return round(decodedValue / 10)
     
     async def shutdown(self, delay):
         await asyncio.sleep(delay)  # Wait for specified delay (in seconds)
@@ -116,60 +113,36 @@ class AsyncServer:
             await self.screenAnimationTaskScheduler(message)
 
     async def AnimateVolcano(self, animationMessage):
-        self.isAnimating = True    
-        if "Blinking" in animationMessage:
-            isOn = False
-            while self.isAnimating:
-                if isOn:
-                    await self.setBrightness(0)
-                else:
-                    await self.setBrightness(100)
-                isOn = not isOn
+        self.isAnimating = True
+        MIN_BRIGHTNESS, MAX_BRIGHTNESS, interval = 0, 100, 8
+        brightness = MIN_BRIGHTNESS
+        increment = True
+
+        while self.isAnimating:
+            if "Blinking" in animationMessage:
+                brightness = 0 if brightness == 100 else 100
                 await asyncio.sleep(0.5)
-        elif "Breathing" in animationMessage:
-            increment = True
-            min, max, interval = 0, 100, 8
-            x = -interval
-            while self.isAnimating:  
-                if increment:
-                    x += interval
-                else:
-                    x -= interval
-                if x >= max:
-                    x = max
-                    increment = False
-                elif x <= min:
-                    x = min
-                    increment = True
-                await self.setBrightness(x)
+            elif "Breathing" in animationMessage:
+                brightness += interval if increment else -interval
+                increment = not increment if brightness in [min(MIN_BRIGHTNESS,brightness), max(MAX_BRIGHTNESS, brightness)] else increment
+                brightness = min(max(brightness, MIN_BRIGHTNESS), MAX_BRIGHTNESS)
                 await asyncio.sleep(0.1)
-        elif "Ascending" in animationMessage:
-            increment = True
-            min, max, interval = 0, 100, 8
-            x = -interval
-            while self.isAnimating:  
-                x += interval
-                if x >= max:
-                    x = max
-                await self.setBrightness(x)
-                if x == max:
-                    x = -interval
+            elif "Ascending" in animationMessage:
+                if brightness >= MAX_BRIGHTNESS:
+                    brightness = -interval
+                brightness = min(interval+brightness,MAX_BRIGHTNESS)
                 await asyncio.sleep(0.1)
-        elif "Descending" in animationMessage:
-            increment = True
-            min, max, interval = 0, 100, 8
-            x = max
-            while self.isAnimating:
-                if x < min:
-                    x = min  
-                await self.setBrightness(x)
-                if x == min:
-                    x = max
-                else:
-                    x -= interval
+            elif "Descending" in animationMessage:
+                if brightness <= MIN_BRIGHTNESS:
+                    brightness = MAX_BRIGHTNESS+interval
+                brightness = max(brightness-interval, MIN_BRIGHTNESS)
                 await asyncio.sleep(0.1)
-        
-        await self.setBrightness(70)
+            else:
+                break
+
+            await self.setBrightness(brightness)
+
+        await self.setBrightness(70)  # Reset brightness to 70 when animation stops
 
     async def screenAnimationTaskScheduler(self, animationMessage):
         if self.screenAnimationTask and not self.screenAnimationTask.done():
@@ -231,17 +204,10 @@ class AsyncServer:
             elif message.startswith("FanOffTimer"):
                 await self.onFanOffTimer(message)
             elif message == "HeatToggle": 
-                if self.heatOn:
-                    await self.turnHeatOff()
-                else:
-                    await self.turnHeatOn()
-                self.heatOn = not self.heatOn
+                await self.turnHeatOff() if self.heatOn else await self.turnHeatOn()
                 data = f"Heat on: {self.heatOn}".encode('utf-8')
             elif message == "FanToggle":
-                if self.fanOn:
-                    await self.turnFanOff()
-                else:
-                    await self.turnFanOn()
+                await self.turnFanOff() if self.fanOn else await self.turnFanOn()
                 data = f"Fan on: {self.fanOn}".encode('utf-8')
             elif message.startswith("Temp="):
                 parts = message.split("=")
@@ -253,7 +219,7 @@ class AsyncServer:
                 await self.turnFanOff()
                 if self.server_task is not None:
                     self.server_task.cancel()
-                sys.exit("Disconnect command recieved, closing server")
+                sys.exit("Disconnect command received, closing server")
 
             writer.write(data)
             await writer.drain()
