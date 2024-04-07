@@ -117,30 +117,28 @@ class AsyncServer:
         MIN_BRIGHTNESS, MAX_BRIGHTNESS, interval = 0, 100, 8
         brightness = MIN_BRIGHTNESS
         increment = True
+        sleepTime = 0.1
 
         while self.isAnimating:
             if "Blinking" in animationMessage:
                 brightness = 0 if brightness == 100 else 100
-                await asyncio.sleep(0.5)
+                sleepTime = 0.5
             elif "Breathing" in animationMessage:
                 brightness += interval if increment else -interval
                 increment = not increment if brightness in [min(MIN_BRIGHTNESS,brightness), max(MAX_BRIGHTNESS, brightness)] else increment
                 brightness = min(max(brightness, MIN_BRIGHTNESS), MAX_BRIGHTNESS)
-                await asyncio.sleep(0.1)
             elif "Ascending" in animationMessage:
                 if brightness >= MAX_BRIGHTNESS:
                     brightness = -interval
                 brightness = min(interval+brightness,MAX_BRIGHTNESS)
-                await asyncio.sleep(0.1)
             elif "Descending" in animationMessage:
                 if brightness <= MIN_BRIGHTNESS:
                     brightness = MAX_BRIGHTNESS+interval
                 brightness = max(brightness-interval, MIN_BRIGHTNESS)
-                await asyncio.sleep(0.1)
             else:
                 break
-
             await self.setBrightness(brightness)
+            await asyncio.sleep(sleepTime)
 
         await self.setBrightness(70)  # Reset brightness to 70 when animation stops
 
