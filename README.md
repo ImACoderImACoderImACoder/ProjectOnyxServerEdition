@@ -37,3 +37,7 @@ Using ssh will allow you to control with many devices such as shortcuts in ios a
 # Video Demo
 
 https://www.tiktok.com/t/ZTL24gwcK/
+
+## Developer Documentation
+
+To learn more about the inner workings of the volcano or project onyx read the [developer documentation.](https://github.com/ImACoderImACoderImACoder/onyx/blob/main/Documentation/TableOfContents/Developer%20Documentation.pdf) Pdf links don't work inside of github's pdf viewer, for the best experience view the docs outside of github.
